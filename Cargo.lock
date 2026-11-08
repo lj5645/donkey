@@ -1313,6 +1313,7 @@ dependencies = [
  "openidconnect",
  "reqwest 0.13.4",
  "rust-embed",
+ "rustls",
  "sea-orm",
  "secrecy",
  "serde",
