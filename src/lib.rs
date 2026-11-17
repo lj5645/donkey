@@ -9,6 +9,7 @@ pub mod db;
 pub mod domainfold;
 pub mod error;
 pub mod helpers;
+pub mod media_fallback;
 pub mod image_tools;
 mod node_selection;
 pub mod nodes;

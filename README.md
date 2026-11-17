@@ -329,6 +329,7 @@ http://proxy-user:proxy-password@donkey-host:5003
 | `DONKEY_PULL_LOGGING_ENABLED` | `true` | 是否记录并显示镜像拉取历史 |
 | `DONKEY_PULL_LOG_RETENTION_DAYS` | `30` | 拉取历史保留天数 |
 | `DONKEY_PULL_LOG_MAX_ENTRIES` | `10000` | 拉取历史最大条数 |
+| `DONKEY_MEDIA_TYPE_FALLBACK` | `false` | 客户端未声明 OCI 能力时，补齐 Accept 并把响应媒体类型降级为 Docker 格式（用于 ghcr.io 这类只提供 OCI 且不做降级的上游） |
 
 节点分配使用真实下载吞吐、成功率和当前连接负载。`balanced` 按有效吞吐加权分配，`speed-first` 优先使用有效吞吐更高的节点；`projected-completion` 还结合请求大小与延迟估算完成时间。两种算法均保留约 1/8 的调度机会，优先试用空闲的未测速或刚恢复节点；已经在测速的节点不会持续获得额外探索请求。HEAD 等零字节探测不更新吞吐估计。
 

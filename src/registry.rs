@@ -161,12 +161,18 @@ async fn handle_inner(state: AppState, request: Request) -> ApiResult<Response> 
         }
     }
     let method = request.method().clone();
-    let headers = request.headers().clone();
+    let mut headers = request.headers().clone();
+    // 客户端没声明 OCI 能力时，由代理补齐 Accept，否则只提供 OCI 的上游会直接 404。
+    let media_fallback = state.config.media_type_fallback
+        && !crate::media_fallback::client_supports_oci(&headers);
+    if media_fallback {
+        crate::media_fallback::upgrade_accept(&mut headers);
+    }
     let pull_subject = (matches!(method, Method::GET | Method::HEAD)
         && state.runtime_flags.pull_logging_enabled())
     .then(|| manifest_pull_subject(&upstream_path))
     .flatten();
-    let response = proxy_passthrough(&state, method, upstream_path, headers, nodes).await?;
+    let mut response = proxy_passthrough(&state, method, upstream_path, headers, nodes).await?;
     if let Some((repository, reference)) = pull_subject
         && response.status().is_success()
     {
@@ -199,6 +205,9 @@ async fn handle_inner(state: AppState, request: Request) -> ApiResult<Response> 
                 tracing::warn!(?error, "failed to prune image pull events");
             }
         }
+    }
+    if media_fallback && response.status().is_success() {
+        response = crate::media_fallback::downgrade_response(response).await;
     }
     Ok(response)
 }

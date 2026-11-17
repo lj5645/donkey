@@ -54,6 +54,8 @@ pub struct Config {
     pub pull_logging_enabled: bool,
     pub pull_log_retention_days: u64,
     pub pull_log_max_entries: u64,
+    /// 客户端不声明 OCI 能力时，由代理补 Accept 并改写响应媒体类型
+    pub media_type_fallback: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -219,6 +221,7 @@ impl Config {
             pull_logging_enabled: bool_env("DONKEY_PULL_LOGGING_ENABLED", true)?,
             pull_log_retention_days: u64_env("DONKEY_PULL_LOG_RETENTION_DAYS", 30, 1, 3650)?,
             pull_log_max_entries: u64_env("DONKEY_PULL_LOG_MAX_ENTRIES", 10_000, 100, 1_000_000)?,
+            media_type_fallback: bool_env("DONKEY_MEDIA_TYPE_FALLBACK", false)?,
         };
 
         if config.admin_addr.ip().is_unspecified()
@@ -285,6 +288,7 @@ impl Config {
             pull_logging_enabled: true,
             pull_log_retention_days: 30,
             pull_log_max_entries: 10_000,
+            media_type_fallback: false,
         }
     }
 
@@ -361,6 +365,7 @@ impl Config {
                     self.pull_log_retention_days = setting.value.parse()?
                 }
                 "pull_log_max_entries" => self.pull_log_max_entries = setting.value.parse()?,
+                "media_type_fallback" => self.media_type_fallback = setting.value.parse()?,
                 _ => {}
             }
         }
