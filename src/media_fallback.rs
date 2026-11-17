@@ -128,23 +128,19 @@ pub async fn downgrade_response(response: Response) -> Response {
 
     let (mut parts, body) = response.into_parts();
 
-    // HEAD 请求没有 body：只改 Content-Type，不解析 JSON，也不动 Content-Length。
-    if parts
-        .headers
-        .get(header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        == Some("0")
-    {
-        if let Ok(value) = HeaderValue::from_str(target) {
-            parts.headers.insert(header::CONTENT_TYPE, value);
-        }
-        return Response::from_parts(parts, body);
-    }
-
     let Ok(bytes) = to_bytes(body, MAX_MANIFEST_BYTES).await else {
         // 读取失败就直接给客户端一个明确的错误，避免半截 body。
         return fallback_error();
     };
+
+    // HEAD 请求没有 body，但 Content-Length 是 manifest 的真实大小。
+    // 这种情况只改 Content-Type，保留原始 Content-Length，不解析 JSON。
+    if bytes.is_empty() {
+        if let Ok(value) = HeaderValue::from_str(target) {
+            parts.headers.insert(header::CONTENT_TYPE, value);
+        }
+        return Response::from_parts(parts, Body::empty());
+    }
     let Ok(mut value) = serde_json::from_slice::<Value>(&bytes) else {
         return fallback_error();
     };
@@ -308,5 +304,26 @@ mod tests {
         let response = (StatusCode::NOT_FOUND, "").into_response();
         let untouched = downgrade_response(response).await;
         assert_eq!(untouched.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn head_request_keeps_content_length() {
+        // HEAD 响应没有 body，但 Content-Length 是真实大小，此时只改 Content-Type。
+        let mut response = Response::new(Body::empty());
+        response
+            .headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static(OCI_INDEX));
+        response
+            .headers_mut()
+            .insert(header::CONTENT_LENGTH, HeaderValue::from_static("1234"));
+        let downgraded = downgrade_response(response).await;
+        assert_eq!(
+            downgraded.headers().get(header::CONTENT_TYPE).unwrap(),
+            DOCKER_LIST
+        );
+        assert_eq!(
+            downgraded.headers().get(header::CONTENT_LENGTH).unwrap(),
+            "1234"
+        );
     }
 }
