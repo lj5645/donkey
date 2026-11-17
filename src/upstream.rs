@@ -393,13 +393,22 @@ fn forward_headers(
     headers: &HeaderMap,
     range: RangeMode,
 ) -> RequestBuilder {
+    // 这些头可能出现多行：Docker 会把 Accept 拆成多个独立行发送。
+    // 只取 get() 的第一行会丢掉其余值，上游据此误判客户端能力。
+    // 按 RFC 7230 合并成一个逗号分隔的头再转发。
     for name in [
         header::ACCEPT,
         header::IF_NONE_MATCH,
         header::IF_MODIFIED_SINCE,
     ] {
-        if let Some(value) = headers.get(&name) {
-            request = request.header(name, value);
+        let joined = headers
+            .get_all(&name)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !joined.is_empty() {
+            request = request.header(name, joined);
         }
     }
     match range {
@@ -454,6 +463,7 @@ fn repository_scope(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http::HeaderValue;
 
     #[test]
     fn parses_real_mirror_challenge() {
@@ -497,5 +507,39 @@ mod tests {
             forwarded.headers().get(header::RANGE).unwrap(),
             "bytes=100-199"
         );
+    }
+
+    #[test]
+    fn forwards_all_lines_of_multi_value_accept() {
+        // Docker 把 Accept 拆成多行发送，转发时必须全部带上，
+        // 否则上游只能看到第一行、误判客户端不支持 OCI。
+        let client = reqwest::Client::new();
+        let mut headers = HeaderMap::new();
+        headers.append(
+            header::ACCEPT,
+            HeaderValue::from_static("application/vnd.docker.distribution.manifest.v2+json"),
+        );
+        headers.append(
+            header::ACCEPT,
+            HeaderValue::from_static("application/vnd.oci.image.manifest.v1+json"),
+        );
+        headers.append(
+            header::ACCEPT,
+            HeaderValue::from_static("application/vnd.oci.image.index.v1+json"),
+        );
+
+        let request = forward_headers(
+            client.get("https://example.com/v2/x/manifests/latest"),
+            &headers,
+            RangeMode::Suppress,
+        )
+        .build()
+        .unwrap();
+
+        let forwarded = request.headers().get(header::ACCEPT).unwrap().to_str().unwrap();
+        assert!(forwarded.contains("manifest.v2+json"));
+        assert!(forwarded.contains("image.manifest.v1+json"));
+        assert!(forwarded.contains("image.index.v1+json"));
+        assert_eq!(forwarded.matches(',').count(), 2);
     }
 }
